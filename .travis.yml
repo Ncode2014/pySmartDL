@@ -23,6 +23,8 @@ jobs:
       python: 3.6
     - <<: *testingStage
       python: 3.7
+    - <<: *testingStage
+      python: 3.8
 
     - stage: Deploy
       if: tag =~ /^v
@@ -51,4 +53,4 @@ jobs:
           skip-cleanup: true
           distributions: "sdist bdist_wheel"
           on:
-            all_branches: true  # actually based on a -live tag
+            all_branches: true  # actually based on the tag

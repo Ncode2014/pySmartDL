@@ -9,8 +9,9 @@ import urllib.request, urllib.parse, urllib.error
 import random
 import logging
 import re
+import hashlib
 from concurrent import futures
-from math import log
+from math import log, ceil
 import shutil
 
 DEFAULT_LOGGER_CREATED = False
@@ -60,7 +61,7 @@ def url_fix(s, charset='utf-8'):
     '''
     scheme, netloc, path, qs, anchor = urllib.parse.urlsplit(s)
     path = urllib.parse.quote(path, '/%')
-    qs = urllib.parse.quote_plus(qs, ':&=')
+    qs = urllib.parse.quote_plus(qs, ':&%=')
     return urllib.parse.urlunsplit((scheme, netloc, path, qs, anchor))
     
 def progress_bar(progress, length=20):
@@ -96,16 +97,19 @@ def is_HTTPRange_supported(url, timeout=15):
     '''
     url = url.replace(' ', '%20')
     
-    fullsize = get_filesize(url)
+    fullsize = get_filesize(url, timeout=timeout)
     if not fullsize:
         return False
     
     headers = {'Range': 'bytes=0-3'}
     req = urllib.request.Request(url, headers=headers)
     urlObj = urllib.request.urlopen(req, timeout=timeout)
-    filesize = int(urlObj.headers["Content-Length"])
-    
     urlObj.close()
+    
+    if "Content-Length" not in urlObj.headers:
+        return False
+
+    filesize = int(urlObj.headers["Content-Length"])
     return filesize != fullsize
 
 def get_filesize(url, timeout=15):
@@ -130,32 +134,32 @@ def get_filesize(url, timeout=15):
 def get_random_useragent():
     '''
     Returns a random popular user-agent.
-    Taken from `here <http://techblog.willshouse.com/2012/01/03/most-common-user-agents/>`_, last updated on 2019/02/17.
+    Taken from `here <http://techblog.willshouse.com/2012/01/03/most-common-user-agents/>`_, last updated on 2020/09/19.
     
     :returns: user-agent
     :rtype: string
     '''
     l = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0.2 Safari/605.1.15",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:65.0) Gecko/20100101 Firefox/65.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.140 Safari/537.36 Edge/17.17134",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.96 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0) Gecko/20100101 Firefox/64.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.109 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.81 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0.3 Safari/605.1.15",
-        "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0",
-        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:65.0) Gecko/20100101 Firefox/65.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:80.0) Gecko/20100101 Firefox/80.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:79.0) Gecko/20100101 Firefox/79.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
+        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:80.0) Gecko/20100101 Firefox/80.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:80.0) Gecko/20100101 Firefox/80.0",
+        "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36 Edg/85.0.564.44",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36 Edg/85.0.564.51",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:79.0) Gecko/20100101 Firefox/79.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
 	]
     return random.choice(l)
 
@@ -236,6 +240,61 @@ def time_human(duration, fmt_short=False, show_ms=False):
     if fmt_short:
         return "".join(["%s%s" % x for x in result])
     return ", ".join(["%s %s" % x for x in result])
+
+def get_file_hash(algorithm, path):
+    '''
+    Calculates a file's hash.
+
+    .. WARNING::
+        The hashing algorithm must be supported on your system, as documented at `hashlib documentation page <http://docs.python.org/3/library/hashlib.html>`_.
+    
+    :param algorithm: Hashing algorithm.
+    :type algorithm: string
+    :param path: The file path
+    :type path: string
+    :rtype: string
+    '''
+    hashAlg = hashlib.new(algorithm)
+    block_sz = 1*1024**2  # 1 MB
+
+    with open(path, 'rb') as f:
+        data = f.read(block_sz)
+        while data:
+            hashAlg.update(data)
+            data = f.read(block_sz)
+    
+    return hashAlg.hexdigest()
+
+def calc_chunk_size(filesize, threads, minChunkFile):
+    '''
+    Calculates the byte chunks to download.
+    
+    :param filesize: filesize in bytes.
+    :type filesize: int
+    :param threads: Number of trheads
+    :type threads: int
+    :param minChunkFile: Minimum chunk size
+    :type minChunkFile: int
+    :rtype: Array of (startByte,endByte) tuples
+    '''
+    if not filesize:
+        return [(0, 0)]
+        
+    while ceil(filesize/threads) < minChunkFile and threads > 1:
+        threads -= 1
+        
+    args = []
+    pos = 0
+    chunk = ceil(filesize/threads)
+    for i in range(threads):
+        startByte = pos
+        endByte = pos + chunk
+        if endByte > filesize-1:
+            endByte = filesize-1
+        args.append((startByte, endByte))
+        pos += chunk+1
+        
+    return args
     
 def create_debugging_logger():
     '''
@@ -251,7 +310,7 @@ def create_debugging_logger():
         t_log.setLevel(logging.DEBUG)
         console = logging.StreamHandler()
         console.setLevel(logging.DEBUG)
-        console.setFormatter(logging.Formatter('[%(levelname)s||%(thread)d] %(message)s'))
+        console.setFormatter(logging.Formatter('[%(levelname)s||%(thread)d@{%(pathname)s:%(lineno)d}] %(message)s'))
         t_log.addHandler(console)
         DEFAULT_LOGGER_CREATED = True
     

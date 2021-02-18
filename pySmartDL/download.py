@@ -1,21 +1,18 @@
 import os
 import urllib.request, urllib.error, urllib.parse
 import time
-
 from . import utils
 
-def download(url, dest, startByte=0, endByte=None, headers=None, timeout=4, shared_var=None, thread_shared_cmds=None, logger=None, retries=3):
+def download(url, dest, requestArgs=None, context=None, startByte=0, endByte=None, timeout=4, shared_var=None, thread_shared_cmds=None, logger=None, retries=3):
     "The basic download function that runs at each thread."
     logger = logger or utils.DummyLogger()
-    if not headers:
-        headers = {}
+    req = urllib.request.Request(url, **requestArgs)
     if endByte:
-        headers['Range'] = 'bytes=%d-%d' % (startByte, endByte)
-    
+        req.add_header('Range', 'bytes={:.0f}-{:.0f}'.format(startByte, endByte))
     logger.info("Downloading '{}' to '{}'...".format(url, dest))
-    req = urllib.request.Request(url, headers=headers)
     try:
-        urlObj = urllib.request.urlopen(req, timeout=timeout)
+        # Context is used to skip ssl validation if verify is False.
+        urlObj = urllib.request.urlopen(req, timeout=timeout, context=context)
     except urllib.error.HTTPError as e:
         if e.code == 416:
             '''
@@ -29,7 +26,7 @@ def download(url, dest, startByte=0, endByte=None, headers=None, timeout=4, shar
             if retries > 0:
                 logger.warning("Thread didn't got the file it was expecting. Retrying ({} times left)...".format(retries-1))
                 time.sleep(5)
-                return download(url, dest, startByte, endByte, headers, timeout, shared_var, thread_shared_cmds, logger, retries-1)
+                return download(url, dest, requestArgs, startByte, endByte, timeout, shared_var, thread_shared_cmds, logger, retries-1)
             else:
                 raise
         else:
@@ -44,7 +41,7 @@ def download(url, dest, startByte=0, endByte=None, headers=None, timeout=4, shar
                 filesize = int(urlObj.headers["Content-Length"])
                 logger.info("Content-Length is {}.".format(filesize))
             except (IndexError, KeyError, TypeError):
-                logger.warning("Server did not send Content-Length.")
+                logger.warning("Server did not send Content-Length. Filesize is unknown.")
         
         filesize_dl = 0  # total downloaded size
         limitspeed_timestamp = time.time()

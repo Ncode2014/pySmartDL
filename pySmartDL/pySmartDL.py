@@ -13,6 +13,8 @@ import logging
 from io import StringIO
 import multiprocessing.dummy as multiprocessing
 from ctypes import c_int
+import json
+import ssl
 
 from . import utils
 from .control_thread import ControlThread
@@ -21,7 +23,7 @@ from .download import download
 __all__ = ['SmartDL', 'utils']
 __version_mjaor__ = 1
 __version_minor__ = 3
-__version_micro__ = 2
+__version_micro__ = 4
 __version__ = "{}.{}.{}".format(__version_mjaor__, __version_minor__, __version_micro__)
 
 class HashFailedException(Exception):
@@ -64,7 +66,11 @@ class SmartDL:
     :type logger: `logging.Logger` instance
     :param connect_default_logger: If true, connects a default logger to the class.
     :type connect_default_logger: bool
+    :param request_args: Arguments to be passed to a new urllib.request.Request instance in dictionary form. See `urllib.request docs <https://docs.python.org/3/library/urllib.request.html#urllib.request.Request>`_ for options. 
+    :type request_args: dict
     :rtype: `SmartDL` instance
+    :param verify: If ssl certificates should be validated.
+    :type verify: bool
     
     .. NOTE::
             The provided dest may be a folder or a full path name (including filename). The workflow is:
@@ -75,14 +81,21 @@ class SmartDL:
             * If no path is provided, `%TEMP%/pySmartDL/` will be used.
     '''
     
-    def __init__(self, urls, dest=None, progress_bar=True, fix_urls=True, threads=5, timeout=5, logger=None, connect_default_logger=False):
+    def __init__(self, urls, dest=None, progress_bar=True, fix_urls=True, threads=5, timeout=5, logger=None, connect_default_logger=False, request_args=None, verify=True):
         if logger:
             self.logger = logger
         elif connect_default_logger:
             self.logger = utils.create_debugging_logger()
         else:
             self.logger = utils.DummyLogger()
-        
+        if request_args:
+            if "headers" not in request_args:
+                request_args["headers"] = dict()
+            self.requestArgs = request_args
+        else:
+            self.requestArgs = {"headers": dict()}
+        if "User-Agent" not in self.requestArgs["headers"]:
+            self.requestArgs["headers"]["User-Agent"] = utils.get_random_useragent()
         self.mirrors = [urls] if isinstance(urls, str) else urls
         if fix_urls:
             self.mirrors = [utils.url_fix(x) for x in self.mirrors]
@@ -99,8 +112,6 @@ class SmartDL:
             self.dest = os.path.join(self.dest, fn)
         
         self.progress_bar = progress_bar
-        
-        self.headers = {'User-Agent': utils.get_random_useragent()}
         self.threads_count = threads
         self.timeout = timeout
         self.current_attemp = 1 
@@ -133,6 +144,13 @@ class SmartDL:
         
         self.logger.info("Creating a ThreadPool of {} thread(s).".format(self.threads_count))
         self.pool = utils.ManagedThreadPoolExecutor(self.threads_count)
+
+        if verify:
+            self.context = None
+        else:
+            self.context = ssl.create_default_context()
+            self.context.check_hostname = False
+            self.context.verify_mode = ssl.CERT_NONE
         
     def __str__(self):
         return 'SmartDL(r"{}", dest=r"{}")'.format(self.url, self.dest)
@@ -149,9 +167,9 @@ class SmartDL:
         :param password: Password.
         :type password: string
         '''
-        auth_string = '%s:%s' % (username, password)
+        auth_string = '{}:{}'.format(username, password)
         base64string = base64.standard_b64encode(auth_string.encode('utf-8'))
-        self.headers['Authorization'] = b"Basic " + base64string
+        self.requestArgs['headers']['Authorization'] = b"Basic " + base64string
         
     def add_hash_verification(self, algorithm, hash):
         '''
@@ -195,7 +213,8 @@ class SmartDL:
         for filename in default_sums_filenames:
             try:
                 sums_url = "%s/%s" % (folder, filename)
-                obj = urllib.request.urlopen(sums_url)
+                sumsRequest = urllib.request.Request(sums_url, **self.requestArgs)
+                obj = urllib.request.urlopen(sumsRequest)
                 data = obj.read().split('\n')
                 obj.close()
                 
@@ -237,15 +256,15 @@ class SmartDL:
             self.logger.info('One URL is loaded.')
         
         if self.verify_hash and os.path.exists(self.dest):
-            if _get_file_hash(self.hash_algorithm, self.dest) == self.hash_code:
+            if utils.get_file_hash(self.hash_algorithm, self.dest) == self.hash_code:
                 self.logger.info("Destination '%s' already exists, and the hash matches. No need to download." % self.dest)
                 self.status = 'finished'
                 return
-        
+
         self.logger.info("Downloading '{}' to '{}'...".format(self.url, self.dest))
-        req = urllib.request.Request(self.url, headers=self.headers)
+        req = urllib.request.Request(self.url, **self.requestArgs)
         try:
-            urlObj = urllib.request.urlopen(req, timeout=self.timeout)
+            urlObj = urllib.request.urlopen(req, timeout=self.timeout, context=self.context)
         except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout) as e:
             self.errors.append(e)
             if self.mirrors:
@@ -268,7 +287,7 @@ class SmartDL:
             self.logger.warning("Server did not send Content-Length. Filesize is unknown.")
             self.filesize = 0
             
-        args = _calc_chunk_size(self.filesize, self.threads_count, self.minChunkFile)
+        args = utils.calc_chunk_size(self.filesize, self.threads_count, self.minChunkFile)
         bytes_per_thread = args[0][1] - args[0][0] + 1
         if len(args)>1:
             self.logger.info("Launching {} threads (downloads {}/thread).".format(len(args),  utils.sizeof_human(bytes_per_thread)))
@@ -282,9 +301,10 @@ class SmartDL:
                 download,
                 self.url,
                 self.dest+".%.3d" % i,
+                self.requestArgs,
+                self.context,
                 arg[0],
                 arg[1],
-                copy.deepcopy(self.headers),
                 self.timeout,
                 self.shared_var,
                 self.thread_shared_cmds,
@@ -600,6 +620,17 @@ class SmartDL:
         '''
         return hashlib.new(algorithm, self.get_data(binary=True)).hexdigest()
 
+    def get_json(self):
+        '''
+        Returns the JSON in the downloaded data. Will raise `RuntimeError` if it's
+        called when the download task is not finished yet. Will raise `json.decoder.JSONDecodeError`
+        if the downloaded data is not valid JSON.
+        
+        :rtype: dict
+        '''
+        data = self.get_data()
+        return json.loads(data)
+
 def post_threadpool_actions(pool, args, expected_filesize, SmartDLObj):
     "Run function after thread pool is done. Run this in a thread."
     while not pool.done():
@@ -635,42 +666,10 @@ def post_threadpool_actions(pool, args, expected_filesize, SmartDLObj):
     
     if SmartDLObj.verify_hash:
         dest_path = args[-1]            
-        hash_ = _get_file_hash(SmartDLObj.hash_algorithm, dest_path)
+        hash_ = utils.get_file_hash(SmartDLObj.hash_algorithm, dest_path)
 	
         if hash_ == SmartDLObj.hash_code:
             SmartDLObj.logger.info('Hash verification succeeded.')
         else:
             SmartDLObj.logger.warning('Hash verification failed.')
             SmartDLObj.try_next_mirror(HashFailedException(os.path.basename(dest_path), hash, SmartDLObj.hash_code))
-	
-def _get_file_hash(algorithm, path):
-    hashAlg = hashlib.new(algorithm)
-    block_sz = 1* 1024**2  # 1 MB
-
-    with open(path, 'rb') as f:
-        data = f.read(block_sz)
-        while data:
-            hashAlg.update(data)
-            data = f.read(block_sz)
-    
-    return hashAlg.hexdigest()
-
-def _calc_chunk_size(filesize, threads, minChunkFile):
-    if not filesize:
-        return [(0, 0)]
-        
-    while filesize/threads < minChunkFile and threads > 1:
-        threads -= 1
-        
-    args = []
-    pos = 0
-    chunk = filesize/threads
-    for i in range(threads):
-        startByte = pos
-        endByte = pos + chunk
-        if endByte > filesize-1:
-            endByte = filesize-1
-        args.append((startByte, endByte))
-        pos += chunk+1
-        
-    return args

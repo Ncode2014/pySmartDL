@@ -46,8 +46,23 @@ Example 3: Mirrors are also supported
 
 	# Do something with obj.get_dest()
 
+=============================================================
+Example 4: Passing custom options to urllib.request.Request()
+=============================================================
+::
+
+	from pySmartDL import SmartDL
+
+	request_args = {"headers": {"User-Agent": "pySmartDL/1.3.2"}}
+	obj = SmartDL("http://httpbin.org/headers", request_args=request_args, progress_bar=False)
+	obj.start()
+
+	data = obj.get_json()
+	print(data)
+
+
 ==================================================================
-Example 4: Fetch data to memory instead of reading it from a file
+Example 5: Fetch data to memory instead of reading it from a file
 ==================================================================
 ::
 
@@ -57,19 +72,19 @@ Example 4: Fetch data to memory instead of reading it from a file
 	obj = SmartDL(url, progress_bar=False)
 	obj.start()
 
-	data = obj.get_data() # HTML tags!
+	data = obj.get_data()  # HTML tags!
 	
 	# Do something with data
 	
 ====================================================================================
-Example 5: Use the nonblocking flag and get information during the download process
+Example 6: Use the nonblocking flag and get information during the download process
 ====================================================================================
 ::
 
 	import time
 	from pySmartDL import SmartDL
 	 
-	url_100mb_file = ['https://speed.hetzner.de/100MB.bin']
+	url_100mb_file = ['http://www.ovh.net/files/100Mio.dat']
 	obj = SmartDL(url_100mb_file, progress_bar=False)
 	obj.start(blocking=False)
 
@@ -98,7 +113,7 @@ Example 5: Use the nonblocking flag and get information during the download proc
 	# Do something with obj.get_dest()
 	
 =========================
-Example 6: Hash checking
+Example 7: Hash checking
 =========================
 
 Example with passing `blocking=True` to `obj.start()`::
@@ -140,3 +155,15 @@ Example with passing `blocking=False` to `obj.start()`::
 		print("Download failed with the following exceptions:")
 		for e in obj.get_errors():
 			print(unicode(e))
+
+==============================
+Example 8: No ssl verification
+==============================
+::
+
+	from pySmartDL import SmartDL
+
+	obj = SmartDL("https://github.com/iTaybb/pySmartDL/raw/master/test/7za920.zip", verify=False)
+	obj.start()
+
+	# Do something with obj.get_dest()
