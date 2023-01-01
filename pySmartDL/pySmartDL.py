@@ -27,25 +27,34 @@ __version_minor__ = 3
 __version_micro__ = 4
 __version__ = "{}.{}.{}".format(__version_mjaor__, __version_minor__, __version_micro__)
 
+
 class HashFailedException(Exception):
     "Raised when hash check fails."
+
     def __init__(self, fn, calc_hash, needed_hash):
         self.filename = fn
         self.calculated_hash = calc_hash
         self.needed_hash = needed_hash
+
     def __str__(self):
         return 'HashFailedException({}, got {}, expected {})'.format(self.filename, self.calculated_hash, self.needed_hash)
+
     def __repr__(self):
         return '<HashFailedException {}, got {}, expected {}>'.format(self.filename, self.calculated_hash, self.needed_hash)
 
+
 class CanceledException(Exception):
     "Raised when the job is canceled."
+
     def __init__(self):
         pass
+
     def __str__(self):
         return 'CanceledException'
+
     def __repr__(self):
         return "<CanceledException>"
+
 
 class SmartDL:
     '''
@@ -59,12 +68,12 @@ class SmartDL:
     :type file_name: string
     :param progress_bar: If True, prints a progress bar to the `stdout stream <http://docs.python.org/2/library/sys.html#sys.stdout>`_. Default is `True`.
     :type progress_bar: bool
-	:param fix_urls: If true, attempts to fix urls with unsafe characters.
-	:type fix_urls: bool
-	:param threads: Number of threads to use.
-	:type threads: int
+        :param fix_urls: If true, attempts to fix urls with unsafe characters.
+        :type fix_urls: bool
+        :param threads: Number of threads to use.
+        :type threads: int
     :param timeout: Timeout for network operations, in seconds. Default is 5.
-	:type timeout: int
+        :type timeout: int
     :param logger: An optional logger.
     :type logger: `logging.Logger` instance
     :param connect_default_logger: If true, connects a default logger to the class.
@@ -86,7 +95,7 @@ class SmartDL:
             * If no path is provided, `%TEMP%/pySmartDL/` will be used.
     '''
 
-   def __init__(self, urls, dest=None, progress_bar=True, fix_urls=True, threads=5, timeout=5, logger=None, connect_default_logger=False, request_args=None, verify=True, cookie_file=None, file_name=None):
+    def __init__(self, urls, dest=None, progress_bar=True, fix_urls=True, threads=5, timeout=5, logger=None, connect_default_logger=False, request_args=None, verify=True, cookie_file=None, file_name=None):
         self.cookie_file = cookie_file
         if logger:
             self.logger = logger
@@ -109,7 +118,7 @@ class SmartDL:
         self.logger.info('Using url "{}"'.format(self.url))
 
         fn = file_name or urllib.request.urlopen(self.url).info().get_filename() or \
-	    urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(self.url).path))
+            urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(self.url).path))
         self.dest = dest or os.path.join(tempfile.gettempdir(), 'pySmartDL', fn)
         if self.dest[-1] == os.sep:
             if os.path.exists(self.dest[:-1]) and os.path.isfile(self.dest[:-1]):
@@ -123,7 +132,7 @@ class SmartDL:
         self.timeout = timeout
         self.current_attemp = 1
         self.attemps_limit = 4
-        self.minChunkFile = 1024**2*2 # 2MB
+        self.minChunkFile = 1024**2*2  # 2MB
         self.filesize = 0
         self.shared_var = multiprocessing.Value(c_int, 0)  # a ctypes var that counts the bytes already downloaded
         self.thread_shared_cmds = {}
@@ -306,7 +315,7 @@ class SmartDL:
 
         args = utils.calc_chunk_size(self.filesize, self.threads_count, self.minChunkFile)
         bytes_per_thread = args[0][1] - args[0][0] + 1
-        if len(args)>1:
+        if len(args) > 1:
             self.logger.info("Launching {} threads (downloads {}/thread).".format(len(args),  utils.sizeof_human(bytes_per_thread)))
         else:
             self.logger.info("Launching 1 thread (downloads {}).".format(utils.sizeof_human(bytes_per_thread)))
@@ -560,6 +569,7 @@ class SmartDL:
         :rtype: string
         '''
         return self.dest
+
     def get_dl_time(self, human=False):
         '''
         Returns how much time did the download take, in seconds. Returns
@@ -603,7 +613,6 @@ class SmartDL:
             return utils.sizeof_human(self.control_thread.get_final_filesize())
         return self.control_thread.get_final_filesize()
 
-
     def get_data(self, binary=False, bytes=-1):
         '''
         Returns the downloaded data. Will raise `RuntimeError` if it's
@@ -620,7 +629,7 @@ class SmartDL:
 
         flags = 'rb' if binary else 'r'
         with open(self.get_dest(), flags) as f:
-            data = f.read(bytes) if bytes>0 else f.read()
+            data = f.read(bytes) if bytes > 0 else f.read()
         return data
 
     def get_data_hash(self, algorithm):
@@ -647,6 +656,7 @@ class SmartDL:
         '''
         data = self.get_data()
         return json.loads(data)
+
 
 def post_threadpool_actions(pool, args, expected_filesize, SmartDLObj):
     "Run function after thread pool is done. Run this in a thread."
